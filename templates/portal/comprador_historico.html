@@ -1,0 +1,197 @@
+{% load static %}
+{% load l10n %}
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Histórico de Pedidos - Portal Reunidas</title>
+    <style>
+        :root {
+            --cor-principal: #012E23;
+            --cor-destaque: #05B540;
+            --cor-alerta: #FFAA00;
+        }
+        body { font-family: sans-serif; margin: 0; background-color: #f8f9fa; }
+        header { background-color: var(--cor-principal); color: white; padding: 1em 2em; display: flex; justify-content: space-between; align-items: center; }
+        .header-logo { height: 40px; }
+        .header-user a { color: var(--cor-alerta); text-decoration: none; font-weight: bold; }
+        main { padding: 2em; }
+        .page-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #dee2e6; padding-bottom: 0.5em; margin-bottom: 1.5em; }
+        h2 { margin: 0; }
+        .btn { padding: 0.6em 1.2em; border-radius: 4px; border: none; cursor: pointer; font-size: 1em; text-decoration: none; display: inline-block; }
+        .btn-voltar { background-color: #6c757d; color: white; }
+        .filtros-container { background-color: #fff; padding: 1.5em; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.05); margin-bottom: 2em; display: flex; flex-wrap: wrap; gap: 1.5em; align-items: flex-end; }
+        .filtro-item { display: flex; flex-direction: column; }
+        .filtro-item label { margin-bottom: 0.5em; font-weight: bold; color: #555; }
+        .filtro-item input, .filtro-item select { padding: 0.6em; border-radius: 4px; border: 1px solid #ccc; min-width: 200px; }
+        .btn-filtrar { background-color: #007bff; color: white; }
+        .btn-limpar { background-color: #6c757d; color: white; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1em; background-color: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        th, td { border: 1px solid #dee2e6; padding: 12px; text-align: left; vertical-align: middle; }
+        th { background-color: #e9ecef; }
+        .status-pronto { color: var(--cor-destaque); font-weight: bold; }
+        .status-liberado { color: var(--cor-alerta); }
+        nav.menu-interno {
+    margin-left: 30px;
+}
+nav.menu-interno a {
+    color: white;
+    text-decoration: none;
+    margin-left: 20px;
+    font-weight: bold;
+    padding: 5px 0;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s ease-in-out;
+}
+nav.menu-interno a:hover {
+    color: var(--cor-alerta);
+}
+nav.menu-interno a.active {
+    color: var(--cor-alerta);
+    border-bottom-color: var(--cor-alerta);
+}
+
+.stats-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1.5em;
+    margin-bottom: 2em;
+}
+.stat-card {
+    background-color: #fff;
+    padding: 1.5em;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    border-left: 5px solid var(--cor-principal);
+}
+.stat-card h4 {
+    margin-top: 0;
+    color: #555;
+    font-size: 1em;
+}
+.stat-card .stat-number {
+    font-size: 2.5em;
+    font-weight: bold;
+    color: var(--cor-principal);
+}
+/* Cores específicas para os cards */
+.stat-card.sem-acesso { border-left-color: var(--cor-alerta); }
+.stat-card.sem-acesso .stat-number { color: var(--cor-alerta); }
+.stat-card.com-acesso { border-left-color: var(--cor-destaque); }
+.stat-card.com-acesso .stat-number { color: var(--cor-destaque); }
+.stats-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1.5em;
+    margin-bottom: 2em;
+}
+.stat-card {
+    background-color: #fff;
+    padding: 1.5em;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    border-left: 5px solid var(--cor-principal);
+}
+.stat-card h4 { margin-top: 0; color: #555; font-size: 1em; }
+.stat-card .stat-number { font-size: 2.5em; font-weight: bold; color: var(--cor-principal); }
+/* Cores específicas */
+.stat-card.aguardando { border-left-color: var(--cor-alerta); }
+.stat-card.aguardando .stat-number { color: var(--cor-alerta); }
+.stat-card.prontos { border-left-color: var(--cor-info); }
+.stat-card.prontos .stat-number { color: var(--cor-info); }
+.stat-card.concluidos { border-left-color: var(--cor-destaque); }
+.stat-card.concluidos .stat-number { color: var(--cor-destaque); }
+.status-visualizado { color: var(--cor-destaque); font-weight: bold; }
+.status-nao-visualizado { color: var(--cor-alerta); font-weight: bold; }
+    </style>
+</head>
+<body>
+    <header>
+    <div style="display: flex; align-items: center;">
+        <img src="{% static 'img/logo_reunidas.png' %}" alt="Logo Reunidas" class="header-logo">
+        <nav class="menu-interno">
+            <a href="{% url 'portal:comprador_dashboard' %}">Pedidos Pendentes</a>
+            <a href="{% url 'portal:comprador_historico' %}" class="active">Histórico</a>
+            <a href="{% url 'portal:coleta_dashboard' %}">Painel de Coletas</a>
+            <a href="{% url 'portal:relatorios' %}">Relatórios</a>
+            <a href="{% url 'portal:gerenciar_locais' %}">Gerenciar Locais</a>
+            <a href="{% url 'portal:analise_cotacao' %}">Análise de Cotações</a>
+
+
+
+
+        </nav>
+    </div>
+    <div class="header-user">
+        <span>Olá, {{ request.user.username }}</span> | <a href="{% url 'admin:logout' %}">Sair</a>
+    </div>
+</header>
+
+    <main>
+    {% if messages %} {% endif %}
+
+    <div class="page-header">
+        <h2>Histórico de Pedidos Liberados</h2>
+        <a href="{% url 'portal:comprador_dashboard' %}" class="btn btn-voltar">Voltar para Pendentes</a>
+    </div>
+
+    <div class="stats-container">
+        <div class="stat-card">
+            <h4>Total de Pedidos Liberados</h4>
+            <div class="stat-number">{{ stats_historico.total_liberados }}</div>
+        </div>
+        <div class="stat-card aguardando">
+            <h4>Aguardando Fornecedor</h4>
+            <div class="stat-number">{{ stats_historico.aguardando_fornecedor }}</div>
+        </div>
+        <div class="stat-card prontos">
+            <h4>Prontos para Coleta</h4>
+            <div class="stat-number">{{ stats_historico.prontos_para_coleta }}</div>
+        </div>
+        <div class="stat-card concluidos">
+            <h4>Pedidos Concluídos</h4>
+            <div class="stat-number">{{ stats_historico.concluidos }}</div>
+        </div>
+    </div>
+    <form method="get" class="filtros-container">
+        </form>
+
+        <table>
+    <thead>
+        <tr>
+            <th>Nº do Pedido</th>
+            <th>Fornecedor</th>
+            <th>Data de Emissão</th>
+            <th>Data de Liberação</th>
+            <th>Status no Portal</th>
+            <th>Visualizado</th>  </tr>
+    </thead>
+            <tbody>
+        {% for pedido in pedidos_historico %}
+        <tr>
+        {# CORREÇÃO AQUI: Usa os novos atributos para criar o link correto #}
+        <td><a href="{% url 'portal:comprador_pedido_detalhes' pedido.num_original pedido.filial %}">{{ pedido.numero_pedido }}</a></td>
+        <td>{{ pedido.fornecedor_usuario.nome_fornecedor }}</td>
+            <td>{{ pedido.data_emissao|date:"d/m/Y" }}</td>
+            <td>{{ pedido.data_liberacao_portal|date:"d/m/Y H:i" }}</td>
+            <td>
+                <span class="status-badge status-{{ pedido.status|lower }}">{{ pedido.get_status_display }}</span>
+            </td>
+            <td>
+                {% if pedido.data_visualizacao %}
+                    <span class="status-visualizado">Sim ({{ pedido.data_visualizacao|date:"d/m/Y H:i" }})</span>
+                {% else %}
+                    <span class="status-nao-visualizado">Não</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% empty %}
+        <tr>
+            <td colspan="6" style="text-align: center; padding: 2em;">Nenhum dado de histórico encontrado.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+        </table>
+    </main>
+</body>
+</html>
