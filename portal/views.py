@@ -24,6 +24,7 @@ from django.conf import settings
 from django.http import HttpResponse
 from django.utils import timezone
 from django.db.models import Max, F, Value as V
+from django.core.paginator import Paginator
 
 
 # Imports de bibliotecas nativas do Python
@@ -248,10 +249,9 @@ def supplier_pedido_detalhes_view(request, pedido_id):
     }
     return render(request, 'portal/supplier_pedido_detalhes.html', context)
 
-
 @staff_member_required
 def comprador_dashboard_view(request):
-    # ... (lógica de filtros permanece a mesma) ...
+    # Lógica de filtros (sem alteração)
     filtro_fornecedor_cod = request.GET.get('fornecedor', '')
     filtro_pedido_num = request.GET.get('pedido', '')
     filtro_data_inicio = request.GET.get('data_inicio', '')
@@ -264,10 +264,8 @@ def comprador_dashboard_view(request):
 
     status_choices = { 'L': 'Liberado', 'B': 'Bloqueado', 'R': 'Reprovado' }
     
-    # CORREÇÃO: A lista de pedidos já liberados agora considera a chave composta
     pedidos_ja_liberados = list(PedidoLiberado.objects.values_list('numero_pedido', flat=True))
 
-    # CORREÇÃO: Anota a chave composta (pedido-filial) para a verificação
     base_pedidos_pendentes_qs = SC7PedidoItem.objects.annotate(
         composite_key=Concat('c7_num', V('-'), 'c7_filial')
     ).exclude(
@@ -276,7 +274,7 @@ def comprador_dashboard_view(request):
         composite_key__in=pedidos_ja_liberados
     )
     
-    # ... (resto da lógica da view permanece a mesma) ...
+    # Lógica para obter filtros (sem alteração)
     todos_grupos = SBM.objects.all().order_by('bm_grupo')
     classes_superiores = []
     codigos_classes_adicionadas = set()
@@ -330,13 +328,6 @@ def comprador_dashboard_view(request):
         row_number=Window(expression=RowNumber(), partition_by=[F('c7_num'), F('c7_filial')], order_by=F('recno').asc())
     ).filter(row_number=1)
 
-    contagem_status = pedidos_unicos_filtrados.aggregate(
-        total_aprovados=Count('c7_num', filter=Q(c7_conapro='L')),
-        total_bloqueados=Count('c7_num', filter=Q(c7_conapro='B')),
-        total_reprovados=Count('c7_num', filter=Q(c7_conapro='R')),
-        total_nao_definido=Count('c7_num', filter=Q(c7_conapro=''))
-    )
-    
     resultado_final = pedidos_unicos_filtrados.annotate(
         nome_fornecedor=Subquery(
             SA2Fornecedor.objects.filter(a2_cod=OuterRef('c7_fornece')).values('a2_nome')[:1]
@@ -350,24 +341,64 @@ def comprador_dashboard_view(request):
         )
     ).order_by('-c7_emissao')
 
-    codigos_com_acesso = {cod.strip() for cod in FornecedorUsuario.objects.values_list('codigo_externo', flat=True) if cod is not None}
+    # --- NOVA LÓGICA DE PAGINAÇÃO ---
+    per_page = request.GET.get('per_page', 25)
+    try:
+        per_page = int(per_page)
+    except (ValueError, TypeError):
+        per_page = 25
+
+    paginator = Paginator(resultado_final, per_page)
+    page_number = request.GET.get('page')
+    pedidos_page_obj = paginator.get_page(page_number)
+
+    # --- LÓGICA DE ANÁLISE DE ACESSO E MÚLTIPLAS FILIAIS (AGORA SOBRE A PÁGINA ATUAL) ---
+    cnpjs_com_acesso = {user.cnpj.strip(): user for user in FornecedorUsuario.objects.all()}
+    
+    for pedido in pedidos_page_obj:
+        codigo_fornecedor = pedido.c7_fornece.strip()
+        possible_suppliers = SA2Fornecedor.objects.filter(a2_cod=codigo_fornecedor)
+        
+        pedido.fornecedor_tem_acesso = False
+        pedido.fornecedor_usuario = None
+
+        if possible_suppliers.count() > 1:
+            pedido.multiple_suppliers = True
+            pedido.supplier_options = possible_suppliers
+            if any(sup.a2_cgc.strip() in cnpjs_com_acesso for sup in possible_suppliers):
+                pedido.fornecedor_tem_acesso = True
+                for sup in possible_suppliers:
+                    if sup.a2_cgc.strip() in cnpjs_com_acesso:
+                        pedido.fornecedor_usuario = cnpjs_com_acesso[sup.a2_cgc.strip()]
+                        break
+        else:
+            pedido.multiple_suppliers = False
+            supplier = possible_suppliers.first()
+            if supplier and supplier.a2_cgc.strip() in cnpjs_com_acesso:
+                pedido.fornecedor_tem_acesso = True
+                pedido.fornecedor_usuario = cnpjs_com_acesso[supplier.a2_cgc.strip()]
+
+    # --- LÓGICA DE ESTATÍSTICAS (SOBRE O TOTAL FILTRADO) ---
+    contagem_status = resultado_final.aggregate(
+        total_aprovados=Count('c7_num', filter=Q(c7_conapro='L')),
+        total_bloqueados=Count('c7_num', filter=Q(c7_conapro='B')),
+        total_reprovados=Count('c7_num', filter=Q(c7_conapro='R')),
+        total_nao_definido=Count('c7_num', filter=Q(c7_conapro=''))
+    )
+
+    codigos_fornecedores_filtrados = set(resultado_final.values_list('c7_fornece', flat=True))
     fornecedores_com_acesso_set = set()
     fornecedores_sem_acesso_set = set()
-
-    for pedido in resultado_final:
-        codigo_fornecedor = pedido.c7_fornece.strip()
-        if codigo_fornecedor in codigos_com_acesso:
-            pedido.fornecedor_tem_acesso = True
-            fornecedor_usuario = FornecedorUsuario.objects.filter(codigo_externo=codigo_fornecedor).first()
-            pedido.fornecedor_usuario = fornecedor_usuario
-            fornecedores_com_acesso_set.add(codigo_fornecedor)
+    
+    for fornecedor_cod in codigos_fornecedores_filtrados:
+        suppliers = SA2Fornecedor.objects.filter(a2_cod=fornecedor_cod.strip())
+        if any(sup.a2_cgc.strip() in cnpjs_com_acesso for sup in suppliers):
+            fornecedores_com_acesso_set.add(fornecedor_cod)
         else:
-            pedido.fornecedor_tem_acesso = False
-            pedido.fornecedor_usuario = None
-            fornecedores_sem_acesso_set.add(codigo_fornecedor)
+            fornecedores_sem_acesso_set.add(fornecedor_cod)
 
     stats = {
-        'total_pedidos': resultado_final.count(),
+        'total_pedidos': paginator.count,
         'fornecedores_com_acesso': len(fornecedores_com_acesso_set),
         'fornecedores_sem_acesso': len(fornecedores_sem_acesso_set),
         'pedidos_aprovados': contagem_status['total_aprovados'],
@@ -377,7 +408,8 @@ def comprador_dashboard_view(request):
     }
 
     context = {
-        'pedidos_pendentes': resultado_final,
+        'pedidos_page_obj': pedidos_page_obj,
+        'per_page': per_page,
         'todos_fornecedores': fornecedores_para_filtro,
         'filiais_pendentes': filiais_para_filtro,
         'municipios_pendentes': municipios_pendentes,
@@ -400,7 +432,7 @@ def comprador_dashboard_view(request):
     return render(request, 'portal/comprador_dashboard.html', context)
 
 
-def preparar_contexto_pdf(pedido_num, filial):
+def preparar_contexto_pdf(pedido_num, filial, fornecedor_erp=None):
     itens_pedido_erp = SC7PedidoItem.objects.filter(c7_num=pedido_num, c7_filial=filial).order_by('c7_item')
     if not itens_pedido_erp.exists():
         raise Http404("Pedido não encontrado no ERP para esta filial")
@@ -413,12 +445,13 @@ def preparar_contexto_pdf(pedido_num, filial):
     except SYSCompany.DoesNotExist:
         empresa_emitente = None
 
-    fornecedor_cod = pedido_erp.c7_fornece.strip()
-    try:
-        fornecedor_erp = SA2Fornecedor.objects.filter(a2_cod=fornecedor_cod.strip()).first()
+    if not fornecedor_erp:
+        fornecedor_cod = pedido_erp.c7_fornece.strip()
+        try:
+            fornecedor_erp = SA2Fornecedor.objects.filter(a2_cod=fornecedor_cod.strip()).first()
 
-    except SA2Fornecedor.DoesNotExist:
-        fornecedor_erp = None
+        except SA2Fornecedor.DoesNotExist:
+            fornecedor_erp = None
     
     try:
         condicao_pagamento = SE4.objects.get(e4_codigo=pedido_erp.c7_cond.strip())
@@ -479,17 +512,59 @@ def preparar_contexto_pdf(pedido_num, filial):
 @staff_member_required
 def liberar_pedido_view(request, pedido_num, filial):
     if request.method == 'POST':
+        fornecedor_recno = request.POST.get('fornecedor_recno')
+
         try:
-            # CORREÇÃO: Cria a chave composta para identificar unicamente o pedido
-            composite_key = f"{pedido_num}-{filial}"
-            
-            # Verifica se já não foi liberado
-            if PedidoLiberado.objects.filter(numero_pedido=composite_key).exists():
-                messages.warning(request, f"O Pedido Nº {pedido_num} para a filial {filial} já foi liberado anteriormente.")
+            fornecedor_erp = None
+            if fornecedor_recno:
+                fornecedor_erp = SA2Fornecedor.objects.get(recno=fornecedor_recno)
+            else:
+                itens_pedido = SC7PedidoItem.objects.filter(c7_num=pedido_num, c7_filial=filial)
+                if not itens_pedido.exists():
+                    raise Http404("Pedido não encontrado")
+                fornecedor_cod = itens_pedido.first().c7_fornece.strip()
+                fornecedores = SA2Fornecedor.objects.filter(a2_cod=fornecedor_cod)
+                if fornecedores.count() > 1:
+                    messages.error(request, "Este fornecedor possui múltiplas filiais. Selecione uma filial para liberar o pedido.")
+                    return redirect('portal:comprador_dashboard')
+                fornecedor_erp = fornecedores.first()
+
+            if not fornecedor_erp:
+                messages.error(request, "Fornecedor não encontrado no ERP.")
                 return redirect('portal:comprador_dashboard')
 
-            contexto_pdf = preparar_contexto_pdf(pedido_num, filial)
-            fornecedor_portal = FornecedorUsuario.objects.get(codigo_externo=contexto_pdf['fornecedor'].a2_cod.strip())
+            fornecedor_portal, created = FornecedorUsuario.objects.get_or_create(
+                cnpj=fornecedor_erp.a2_cgc.strip(),
+                defaults={
+                    'email': fornecedor_erp.a2_email.strip(),
+                    'nome_fornecedor': fornecedor_erp.a2_nome.strip(),
+                    'codigo_externo': fornecedor_erp.a2_cod.strip(),
+                    'password': get_random_string(10)
+                }
+            )
+
+            if created:
+                contexto_email = {
+                    'nome_fornecedor': fornecedor_erp.a2_nome.strip(),
+                    'cnpj': fornecedor_erp.a2_cgc.strip(),
+                    'senha': fornecedor_portal.password,
+                }
+                corpo_email = render_to_string('portal/email/novo_acesso.txt', contexto_email)
+                send_mail(
+                    subject='Seu Acesso ao Portal de Coletas',
+                    message=corpo_email,
+                    from_email=None,
+                    recipient_list=[fornecedor_erp.a2_email.strip()],
+                    fail_silently=False,
+                )
+                messages.success(request, f"Novo acesso criado para {fornecedor_erp.a2_nome.strip()} (CNPJ: {fornecedor_erp.a2_cgc.strip()}).")
+
+            composite_key = f"{pedido_num}-{filial}"
+            if PedidoLiberado.objects.filter(numero_pedido=composite_key).exists():
+                 messages.warning(request, f"O Pedido Nº {pedido_num} ({filial}) já foi liberado.")
+                 return redirect('portal:comprador_dashboard')
+
+            contexto_pdf = preparar_contexto_pdf(pedido_num, filial, fornecedor_erp=fornecedor_erp)
             
             emails_to_send = [
                 email for email in [fornecedor_portal.email] + list(fornecedor_portal.emails_adicionais.values_list('email', flat=True))
@@ -503,7 +578,7 @@ def liberar_pedido_view(request, pedido_num, filial):
             pdf_file = HTML(string=html_string).write_pdf()
             
             PedidoLiberado.objects.create(
-                numero_pedido=composite_key, # Salva a chave composta
+                numero_pedido=composite_key,
                 fornecedor_usuario=fornecedor_portal,
                 data_emissao=contexto_pdf['info_geral'].c7_emissao,
                 status='LIBERADO'
@@ -523,7 +598,7 @@ def liberar_pedido_view(request, pedido_num, filial):
             email.attach(f'Pedido_de_Compra_{contexto_pdf["info_geral"].c7_num}.pdf', pdf_file, 'application/pdf')
             email.send(fail_silently=False)
             
-            messages.success(request, f"Pedido Nº {pedido_num} ({filial}) liberado com sucesso para {fornecedor_portal.nome_fornecedor} e PDF enviado.")
+            messages.success(request, f"Pedido Nº {pedido_num} ({filial}) liberado com sucesso para {fornecedor_portal.nome_fornecedor}.")
 
         except Exception as e:
             messages.error(request, f"Ocorreu um erro inesperado: {e}")
@@ -534,7 +609,33 @@ def liberar_pedido_view(request, pedido_num, filial):
 @staff_member_required
 def gerar_pedido_pdf_view(request, pedido_num, filial):
     try:
-        contexto_pdf = preparar_contexto_pdf(pedido_num, filial)
+        fornecedor_erp = None
+        composite_key = f"{pedido_num}-{filial}"
+        
+        # Verifica se o pedido já foi liberado (está no histórico)
+        pedido_liberado = PedidoLiberado.objects.select_related('fornecedor_usuario').filter(numero_pedido=composite_key).first()
+
+        if pedido_liberado:
+            # Se foi liberado, usa o CNPJ salvo para encontrar o fornecedor exato e gerar o PDF
+            fornecedor_cnpj = pedido_liberado.fornecedor_usuario.cnpj
+            fornecedor_erp = get_object_or_404(SA2Fornecedor, a2_cgc=fornecedor_cnpj)
+        else:
+            # Se não foi liberado (veio do dashboard), aplica a validação de múltiplas filiais
+            itens_pedido = SC7PedidoItem.objects.filter(c7_num=pedido_num, c7_filial=filial)
+            if not itens_pedido.exists():
+                raise Http404("Pedido não encontrado no ERP para esta filial")
+            
+            fornecedor_cod = itens_pedido.first().c7_fornece.strip()
+            possible_suppliers = SA2Fornecedor.objects.filter(a2_cod=fornecedor_cod)
+            
+            if possible_suppliers.count() > 1:
+                messages.warning(request, f"O fornecedor do Pedido {pedido_num} possui múltiplas filiais. O PDF não pode ser gerado diretamente. Utilize a ação 'Liberar para Filial' e o PDF será anexado ao e-mail.")
+                return redirect('portal:comprador_dashboard')
+            
+            fornecedor_erp = possible_suppliers.first()
+
+        # Com o fornecedor_erp correto em mãos, preparamos o contexto para o PDF
+        contexto_pdf = preparar_contexto_pdf(pedido_num, filial, fornecedor_erp=fornecedor_erp)
         html_string = render_to_string('portal/pedido_compra_pdf.html', contexto_pdf)
         pdf_file = HTML(string=html_string).write_pdf()
 
@@ -542,25 +643,39 @@ def gerar_pedido_pdf_view(request, pedido_num, filial):
         response['Content-Disposition'] = f'attachment; filename="Pedido_de_Compra_{pedido_num}.pdf"'
         return response
     
-    # CORREÇÃO: Captura exceções específicas e exibe mensagens de erro claras
     except Http404 as e:
         messages.error(request, f"Não foi possível gerar o PDF. Detalhes: {e}")
     except Exception as e:
-        # Adiciona um log no terminal para depuração, caso necessário
         print(f"Erro ao gerar PDF para {pedido_num}-{filial}: {e}") 
-        messages.error(request, f"Ocorreu um erro inesperado ao gerar o PDF. Verifique se todos os dados do pedido e do fornecedor estão corretos no ERP.")
+        messages.error(request, f"Ocorreu um erro inesperado ao gerar o PDF.")
     
+    # Em caso de erro, tenta retornar o usuário para a página de onde ele veio
+    referer = request.META.get('HTTP_REFERER')
+    if referer and 'historico' in referer:
+        return redirect('portal:comprador_historico')
     return redirect('portal:comprador_dashboard')
+
 
 
 @staff_member_required
 def criar_acesso_fornecedor_view(request, fornecedor_cod):
     if request.method == 'POST':
-        if FornecedorUsuario.objects.filter(codigo_externo=fornecedor_cod.strip()).exists():
-            messages.warning(request, "Este fornecedor já possui um acesso.")
+        fornecedores_erp = SA2Fornecedor.objects.filter(a2_cod=fornecedor_cod.strip())
+        
+        if fornecedores_erp.count() > 1:
+            messages.warning(request, "Este fornecedor possui múltiplas filiais. Para criar o acesso, por favor, utilize a opção 'Liberar' no pedido desejado e selecione a filial correta.")
             return redirect('portal:comprador_dashboard')
+
+        fornecedor_erp = fornecedores_erp.first()
+        if not fornecedor_erp:
+            messages.error(request, f"Erro: Fornecedor com código {fornecedor_cod} não encontrado no ERP.")
+            return redirect('portal:comprador_dashboard')
+
+        if FornecedorUsuario.objects.filter(cnpj=fornecedor_erp.a2_cgc.strip()).exists():
+            messages.warning(request, "Este fornecedor (baseado no CNPJ) já possui um acesso.")
+            return redirect('portal:comprador_dashboard')
+        
         try:
-            fornecedor_erp = SA2Fornecedor.objects.filter(a2_cod=fornecedor_cod).first()
             senha_provisoria = get_random_string(10)
             FornecedorUsuario.objects.create(
                 cnpj=fornecedor_erp.a2_cgc.strip(),
@@ -583,10 +698,9 @@ def criar_acesso_fornecedor_view(request, fornecedor_cod):
                 fail_silently=False,
             )
             messages.success(request, f"Acesso criado com sucesso para {fornecedor_erp.a2_nome.strip()}. Um e-mail foi enviado.")
-        except SA2Fornecedor.DoesNotExist:
-            messages.error(request, f"Erro: Fornecedor com código {fornecedor_cod} não encontrado no ERP.")
         except Exception as e:
             messages.error(request, f"Ocorreu um erro inesperado: {e}")
+
     return redirect('portal:comprador_dashboard')
 
 

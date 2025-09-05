@@ -288,8 +288,9 @@ class SC8CotacaoItem(models.Model):
     def __str__(self):
         return f"Cotação {self.c8_num} - Item {self.c8_item} - Forn. {self.c8_fornece}"
 class SYSCompany(models.Model):
-    m0_codfil = models.CharField(max_length=10, db_column='M0_CODFIL', primary_key=True)
-    m0_nome = models.CharField(max_length=255, db_column='M0_NOME')
+    m0_codfil = models.CharField(max_length=10, db_column='M0_CODFIL', primary_key=True) # Código da Filial (Ex: "0101")
+    m0_nome = models.CharField(max_length=255, db_column='M0_NOME') # Nome da Empresa/Grupo (Ex: "Grupo Reunidas")
+    m0_filial = models.CharField(max_length=255, db_column='M0_FILIAL') # <-- CAMPO ADICIONADO: Nome da Filial (Ex: "REUNIDAS COMERCIO")
     m0_tel = models.CharField(max_length=20, db_column='M0_TEL', blank=True, null=True)
     m0_cgc = models.CharField(max_length=20, db_column='M0_CGC')
     m0_insc = models.CharField(max_length=20, db_column='M0_INSC', blank=True, null=True)

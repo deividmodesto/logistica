@@ -37,19 +37,21 @@
     <div class="header">
         {% if logo_base64 %}<img src="{{ logo_base64 }}" alt="Logo Reunidas">{% endif %}
         <div class="empresa-info">
-            {% if empresa_emitente %}
-                <h2>{{ empresa_emitente.m0_nome }}</h2>
-                <p>
-                    {{ empresa_emitente.m0_endent }}, {{ empresa_emitente.m0_bairent }}<br>
-                    {{ empresa_emitente.m0_cident }} - CEP {{ empresa_emitente.m0_cepent }}<br>
-                    CNPJ: {{ empresa_emitente.m0_cgc }} | IE: {{ empresa_emitente.m0_insc }}<br>
-                    Telefone: {{ empresa_emitente.m0_tel }}
-                </p>
-            {% else %}
-                <h2>Grupo Reunidas</h2>
-                <p>Informações da empresa não encontradas para esta filial.</p>
-            {% endif %}
-        </div>
+    {% if empresa_emitente %}
+        <h1>Grupo Reunidas</h1>
+        <h2>(Filial: {{ info_geral.c7_filial }})</h2>
+        <h3>{{ empresa_emitente.m0_filial }}</h3> {# <--- LINHA ALTERADA PARA EXIBIR O NOME DA FILIAL #}
+        <p>
+            {{ empresa_emitente.m0_endent }}, {{ empresa_emitente.m0_bairent }}<br>
+            {{ empresa_emitente.m0_cident }} - CEP {{ empresa_emitente.m0_cepent }}<br>
+            CNPJ: {{ empresa_emitente.m0_cgc }} | IE: {{ empresa_emitente.m0_insc }}<br>
+            Telefone: {{ empresa_emitente.m0_tel }}
+        </p>
+    {% else %}
+        
+        <p>Informações da empresa não encontradas para esta filial.</p>
+    {% endif %}
+</div>
     </div>
     <h1>Pedido de Compra Nº {{ info_geral.c7_num }}</h1>
     <div class="info-grid">

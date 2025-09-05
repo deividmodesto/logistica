@@ -64,6 +64,37 @@
         .stat-card.nao-definido { border-left-color: #6c757d; }
         .stat-card.nao-definido .stat-number { color: #6c757d; }
         .btn-add-email { background-color: #28a745; color: white; padding: 8px 12px; border-radius: 5px; text-decoration: none; font-size: 0.9em; }
+        .select-filial { width: 100%; padding: 8px; margin-bottom: 8px; border-radius: 4px; border: 1px solid #ccc; }
+        
+        /* Estilos para Paginação */
+        .pagination-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 2em;
+            padding: 1em;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.05);
+        }
+        .pagination-controls a, .pagination-controls strong, .pagination-controls span {
+            padding: 8px 12px;
+            margin: 0 2px;
+            border-radius: 4px;
+            text-decoration: none;
+            color: var(--cor-principal);
+        }
+        .pagination-controls a {
+            border: 1px solid #dee2e6;
+        }
+        .pagination-controls a:hover {
+            background-color: #e9ecef;
+        }
+        .pagination-controls strong {
+            background-color: var(--cor-principal);
+            color: white;
+            border: 1px solid var(--cor-principal);
+        }
     </style>
 </head>
 <body>
@@ -85,6 +116,14 @@
     </header>
 
     <main>
+        {% if messages %}
+        <div class="messages">
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
         <div class="stats-container">
             <div class="stat-card aprovado">
                 <h4>Pedidos Aprovados (L)</h4>
@@ -209,11 +248,11 @@
                     <th>Data de Emissão</th>
                     <th>Fornecedor</th>
                     <th>Status do Pedido</th>
-                    <th style="width: 20%;">Ação</th>
+                    <th style="width: 25%;">Ação</th>
                 </tr>
             </thead>
             <tbody>
-            {% for pedido in pedidos_pendentes %}
+            {% for pedido in pedidos_page_obj %}
             <tr>
                 <td><a href="{% url 'portal:comprador_pedido_detalhes' pedido.c7_num pedido.c7_filial %}">{{ pedido.c7_num }}</a></td>
                 <td>{{ pedido.c7_filial }}</td>
@@ -225,7 +264,26 @@
                     </span>
                 </td>
                 <td>
-                    {% if pedido.fornecedor_tem_acesso %}
+                    {% if pedido.multiple_suppliers %}
+                        <form method="post" action="{% url 'portal:liberar_pedido' pedido.c7_num pedido.c7_filial %}" style="margin: 0;">
+                            {% csrf_token %}
+                            {% if pedido.fornecedor_tem_acesso %}
+                            <div class="action-buttons" style="margin-bottom: 8px;">
+                                <a href="{% url 'portal:gerar_pedido_pdf' pedido.c7_num pedido.c7_filial %}" class="btn-pdf" target="_blank">PDF</a>
+                                {% if pedido.fornecedor_usuario %}
+                                    <a href="{% url 'portal:adicionar_email_fornecedor' pedido.fornecedor_usuario.id %}" class="btn btn-add-email">Add E-mail</a>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                            <select name="fornecedor_recno" class="select-filial" required>
+                                <option value="">Selecione a Filial (CNPJ)</option>
+                                {% for supplier in pedido.supplier_options %}
+                                <option value="{{ supplier.recno }}">{{ supplier.a2_cgc }} - {{ supplier.a2_mun }}</option>
+                                {% endfor %}
+                            </select>
+                            <button type="submit" class="btn-liberar">Liberar para Filial</button>
+                        </form>
+                    {% elif pedido.fornecedor_tem_acesso %}
                         <div class="action-buttons">
                             <a href="{% url 'portal:gerar_pedido_pdf' pedido.c7_num pedido.c7_filial %}" class="btn-pdf" target="_blank">Gerar PDF</a>
                             <form method="post" action="{% url 'portal:liberar_pedido' pedido.c7_num pedido.c7_filial %}" style="margin: 0;">
@@ -250,8 +308,45 @@
                 <td colspan="6" style="text-align: center; padding: 2em;">Nenhum pedido pendente encontrado com os filtros aplicados.</td>
             </tr>
             {% endfor %}
-        </tbody>
+            </tbody>
         </table>
+
+        <div class="pagination-controls">
+            <div class="pagination-info">
+                Página {{ pedidos_page_obj.number }} de {{ pedidos_page_obj.paginator.num_pages }}.
+                <span style="color: #6c757d; font-size: 0.9em;">({{ stats.total_pedidos }} pedidos no total)</span>
+            </div>
+        
+            <div class="pagination-links">
+                {% if pedidos_page_obj.has_previous %}
+                    <a href="?page=1&{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}">&laquo; Primeira</a>
+                    <a href="?page={{ pedidos_page_obj.previous_page_number }}&{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}">Anterior</a>
+                {% endif %}
+        
+                <strong>{{ pedidos_page_obj.number }}</strong>
+        
+                {% if pedidos_page_obj.has_next %}
+                    <a href="?page={{ pedidos_page_obj.next_page_number }}&{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}">Próxima</a>
+                    <a href="?page={{ pedidos_page_obj.paginator.num_pages }}&{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}">Última &raquo;</a>
+                {% endif %}
+            </div>
+            
+            <div class="pagination-per-page">
+                <form method="get" style="display: inline-flex; align-items: center; gap: 5px;">
+                    <span>Exibir:</span>
+                    {% for key, value in request.GET.items %}
+                        {% if key != 'per_page' and key != 'page' %}
+                            <input type="hidden" name="{{ key }}" value="{{ value }}">
+                        {% endif %}
+                    {% endfor %}
+                    <select name="per_page" onchange="this.form.submit()" style="padding: 0.4em; border-radius: 4px; border: 1px solid #ccc;">
+                        <option value="25" {% if per_page == 25 %}selected{% endif %}>25</option>
+                        <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+                        <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+                    </select>
+                </form>
+            </div>
+        </div>
     </main>
 </body>
 </html>
