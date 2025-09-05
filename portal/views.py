@@ -25,6 +25,9 @@ from django.http import HttpResponse
 from django.utils import timezone
 from django.db.models import Max, F, Value as V
 from django.core.paginator import Paginator
+from django.http import JsonResponse # Adicione este import
+from django.views.decorators.http import require_POST # Adicione este import
+import json # Adicione este import
 
 
 # Imports de bibliotecas nativas do Python
@@ -835,6 +838,7 @@ def comprador_historico_view(request):
 @staff_member_required
 def coleta_dashboard_view(request):
     if request.method == 'POST':
+        # ... (Toda a sua lógica de POST permanece aqui, inalterada)
         coleta_id = request.POST.get('coleta_id')
         if not coleta_id:
             messages.error(request, "Erro: Ação inválida. O ID da coleta não foi encontrado no formulário.")
@@ -880,123 +884,90 @@ def coleta_dashboard_view(request):
 
     # --- LÓGICA DE FILTROS E BUSCA (GET) ---
     filtro_fornecedor_id = request.GET.get('fornecedor', '')
-    filtro_pedido_num = request.GET.get('pedido', '')
     filtro_data_disp = request.GET.get('data_disponibilidade', '')
     filtro_status = request.GET.get('status', '')
     filtro_municipio = request.GET.get('municipio', '')
 
-    pedidos_para_coletar = PedidoLiberado.objects.using('default').filter(coletas__isnull=False).select_related(
-        'fornecedor_usuario'
-    ).prefetch_related(
-        models.Prefetch('coletas', queryset=ItemColeta.objects.order_by('ordem_visita', '-prioridade').prefetch_related('detalhes', 'motorista'))
-    ).distinct()
-    
-    coletas_avulsas = ItemColeta.objects.using('default').filter(pedido_liberado__isnull=True).select_related('motorista')
-
-    codigos_fornecedores_com_coleta = pedidos_para_coletar.values_list('fornecedor_usuario__codigo_externo', flat=True).distinct()
-    municipios_erp = SA2Fornecedor.objects.filter(a2_cod__in=list(codigos_fornecedores_com_coleta)).values_list('a2_mun', flat=True).distinct()
-    nomes_locais_avulsos = [m for m in coletas_avulsas.values_list('fornecedor_avulso', flat=True).distinct() if m]
-    municipios_de_locais_avulsos = FornecedorAvulso.objects.filter(nome__in=nomes_locais_avulsos).values_list('municipio', flat=True).distinct()
-    todos_municipios = sorted(list(set(
-        [m.strip() for m in municipios_erp if m] +
-        [m.strip() for m in municipios_de_locais_avulsos if m]
-    )))
+    base_coletas_qs = ItemColeta.objects.select_related(
+        'pedido_liberado__fornecedor_usuario', 'motorista', 'agendado_por', 'conferido_por'
+    ).prefetch_related('detalhes')
 
     if filtro_fornecedor_id:
-        pedidos_para_coletar = pedidos_para_coletar.filter(fornecedor_usuario__id=filtro_fornecedor_id)
-    if filtro_pedido_num:
-        pedidos_para_coletar = pedidos_para_coletar.filter(numero_pedido__startswith=filtro_pedido_num)
+        base_coletas_qs = base_coletas_qs.filter(pedido_liberado__fornecedor_usuario__id=filtro_fornecedor_id)
     if filtro_data_disp:
-        pedidos_para_coletar = pedidos_para_coletar.filter(coletas__data_disponibilidade=filtro_data_disp)
-        coletas_avulsas = coletas_avulsas.filter(data_disponibilidade=filtro_data_disp)
+        base_coletas_qs = base_coletas_qs.filter(data_agendada=filtro_data_disp)
     if filtro_status:
-        pedidos_para_coletar = pedidos_para_coletar.filter(coletas__status_coleta=filtro_status)
-        coletas_avulsas = coletas_avulsas.filter(status_coleta=filtro_status)
+        base_coletas_qs = base_coletas_qs.filter(status_coleta=filtro_status)
     if filtro_municipio:
-        codigos_fornecedores_municipio = list(SA2Fornecedor.objects.filter(a2_mun=filtro_municipio).values_list('a2_cod', flat=True))
-        pedidos_para_coletar = pedidos_para_coletar.filter(fornecedor_usuario__codigo_externo__in=codigos_fornecedores_municipio)
-        
+        codigos_fornecedores_municipio = SA2Fornecedor.objects.filter(a2_mun=filtro_municipio).values_list('a2_cod', flat=True)
+        fornecedor_usuario_ids = FornecedorUsuario.objects.filter(codigo_externo__in=codigos_fornecedores_municipio).values_list('id', flat=True)
         nomes_fornecedores_avulsos_municipio = FornecedorAvulso.objects.filter(municipio=filtro_municipio).values_list('nome', flat=True)
-        coletas_avulsas = coletas_avulsas.filter(fornecedor_avulso__in=nomes_fornecedores_avulsos_municipio)
+        base_coletas_qs = base_coletas_qs.filter(
+            Q(pedido_liberado__fornecedor_usuario_id__in=fornecedor_usuario_ids) |
+            Q(fornecedor_avulso__in=nomes_fornecedores_avulsos_municipio)
+        )
 
-    codigos_fornecedores = {p.fornecedor_usuario.codigo_externo.strip() for p in pedidos_para_coletar if p.fornecedor_usuario.codigo_externo}
-    dados_erp = SA2Fornecedor.objects.filter(a2_cod__in=list(codigos_fornecedores))
-    mapa_fornecedores_erp = {fornecedor.a2_cod.strip(): fornecedor for fornecedor in dados_erp}
-
-    todos_recnos = ItemColetaDetalhe.objects.filter(
-        item_coleta__pedido_liberado__in=pedidos_para_coletar
-    ).values_list('item_erp_recno', flat=True)
-
-    itens_erp_map = {
-        item.recno: item for item in SC7PedidoItem.objects.filter(recno__in=list(todos_recnos))
+    todas_as_coletas = list(base_coletas_qs)
+    
+    # Otimização para buscar dados do ERP necessários em poucas queries
+    codigos_fornecedores_necessarios = {
+        c.pedido_liberado.fornecedor_usuario.codigo_externo.strip()
+        for c in todas_as_coletas if c.pedido_liberado and c.pedido_liberado.fornecedor_usuario.codigo_externo
     }
-    
-    for pedido in pedidos_para_coletar:
-        codigo = pedido.fornecedor_usuario.codigo_externo.strip() if pedido.fornecedor_usuario.codigo_externo else ''
-        pedido.fornecedor_erp_info = mapa_fornecedores_erp.get(codigo)
+    mapa_fornecedores_erp = {f.a2_cod.strip(): f for f in SA2Fornecedor.objects.filter(a2_cod__in=codigos_fornecedores_necessarios)}
+
+    recnos_itens_necessarios = {det.item_erp_recno for col in todas_as_coletas for det in col.detalhes.all()}
+    mapa_itens_erp = {item.recno: item for item in SC7PedidoItem.objects.filter(recno__in=recnos_itens_necessarios)}
+
+    # Adicionar os dados do ERP aos objetos de coleta em memória
+    for coleta in todas_as_coletas:
+        coleta.display_nome_fornecedor = "N/A"
+        coleta.display_municipio = "N/A"
         
-        try:
-            num_pedido_original, filial_pedido = pedido.numero_pedido.split('-')
-            pedido.num_original = num_pedido_original
-            pedido.filial = filial_pedido
-            pedido.numero_pedido_display = num_pedido_original
-        except ValueError:
-            num_pedido_original, filial_pedido = pedido.numero_pedido, '01'
-            pedido.num_original = num_pedido_original
-            pedido.filial = filial_pedido
-            pedido.numero_pedido_display = pedido.numero_pedido
-            
-        for coleta in pedido.coletas.all():
-            for detalhe in coleta.detalhes.all():
-                detalhe.item_erp_info = itens_erp_map.get(detalhe.item_erp_recno)
-    
-    numeros_compostos_validos = [p.numero_pedido for p in pedidos_para_coletar if p.numero_pedido and '-' in p.numero_pedido]
-    pedidos_info = [{'num': num.split('-')[0], 'filial': num.split('-')[1]} for num in numeros_compostos_validos]
-    
-    sc7_queries = Q()
-    for info in pedidos_info:
-        sc7_queries |= Q(c7_num=info['num'], c7_filial=info['filial'])
-    
-    sc7_itens = SC7PedidoItem.objects.filter(sc7_queries).values('c7_num', 'c7_filial', 'c7_numsc').distinct()
-    pedido_filial_to_sc_map = {(item['c7_num'], item['c7_filial']): item['c7_numsc'].strip() for item in sc7_itens}
-    
-    numeros_sc = [sc for sc in pedido_filial_to_sc_map.values() if sc]
-    sc1_itens = SC1.objects.filter(c1_num__in=numeros_sc).extra(
-        where=["C1_NUM COLLATE SQL_Latin1_General_CP1_CI_AS IN (%s)" % (",".join(["%s"]*len(numeros_sc)))],
-        params=numeros_sc
-    ).values('c1_num', 'c1_datprf')
-    sc_to_datprf_map = {item['c1_num'].strip(): item['c1_datprf'] for item in sc1_itens}
+        if coleta.pedido_liberado and coleta.pedido_liberado.fornecedor_usuario:
+            coleta.display_nome_fornecedor = coleta.pedido_liberado.fornecedor_usuario.nome_fornecedor
+            if coleta.pedido_liberado.fornecedor_usuario.codigo_externo:
+                codigo = coleta.pedido_liberado.fornecedor_usuario.codigo_externo.strip()
+                fornecedor_erp = mapa_fornecedores_erp.get(codigo)
+                if fornecedor_erp:
+                    coleta.display_municipio = fornecedor_erp.a2_mun
+        
+        elif coleta.fornecedor_avulso:
+            coleta.display_nome_fornecedor = coleta.fornecedor_avulso
+            try:
+                local = FornecedorAvulso.objects.get(nome=coleta.fornecedor_avulso)
+                coleta.display_municipio = local.municipio
+            except FornecedorAvulso.DoesNotExist:
+                pass
+        
+        # Esta é a linha que causava o erro. Agora ela vai funcionar corretamente.
+        for detalhe in coleta.detalhes.all():
+            detalhe.item_erp = mapa_itens_erp.get(detalhe.item_erp_recno)
 
-    for pedido in pedidos_para_coletar:
-        sc_num = pedido_filial_to_sc_map.get((pedido.num_original, pedido.filial))
-        for coleta in pedido.coletas.all():
-            if sc_num and sc_num in sc_to_datprf_map:
-                data_necessidade_str = sc_to_datprf_map[sc_num]
-                if data_necessidade_str and len(data_necessidade_str) == 8:
-                    ano, mes, dia = data_necessidade_str[0:4], data_necessidade_str[4:6], data_necessidade_str[6:8]
-                    coleta.data_necessidade = f"{dia}/{mes}/{ano}"
-                else:
-                    coleta.data_necessidade = "N/A"
-            else:
-                coleta.data_necessidade = "N/A"
+    # Agrupando para o Kanban
+    coletas_por_data = defaultdict(list)
+    for coleta in sorted(todas_as_coletas, key=lambda c: (c.data_agendada is None, c.data_agendada, c.ordem_visita)):
+        data_chave = coleta.data_agendada or "Sem Data"
+        coletas_por_data[data_chave].append(coleta)
 
-    fornecedores_com_coletas = FornecedorUsuario.objects.filter(
-        pedidoliberado__coletas__isnull=False
-    ).distinct().order_by('nome_fornecedor')
-    
+    # Populando os filtros
+    fornecedores_para_filtro = FornecedorUsuario.objects.filter(pedidoliberado__coletas__isnull=False).distinct().order_by('nome_fornecedor')
     motoristas = Motorista.objects.filter(ativo=True).order_by('nome')
+    municipios_erp = SA2Fornecedor.objects.values_list('a2_mun', flat=True).distinct()
+    municipios_avulsos = FornecedorAvulso.objects.values_list('municipio', flat=True).distinct()
+    todos_municipios = sorted(list(set([m.strip() for m in municipios_erp if m] + [m.strip() for m in municipios_avulsos if m])))
 
     context = {
-        'pedidos_para_coletar': pedidos_para_coletar,
-        'coletas_avulsas': coletas_avulsas,
-        'fornecedores': fornecedores_com_coletas,
+        'coletas_por_data': dict(coletas_por_data),
+        'fornecedores': fornecedores_para_filtro,
         'status_choices': ItemColeta.STATUS_COLETA_CHOICES,
         'prioridade_choices': ItemColeta.PRIORIDADE_CHOICES,
         'municipios': todos_municipios,
         'motoristas': motoristas,
         'filtros': {
-            'fornecedor': filtro_fornecedor_id, 'pedido': filtro_pedido_num,
-            'data_disponibilidade': filtro_data_disp, 'status': filtro_status,
+            'fornecedor': filtro_fornecedor_id,
+            'data_disponibilidade': filtro_data_disp, 
+            'status': filtro_status,
             'municipio': filtro_municipio,
         }
     }
@@ -1583,6 +1554,20 @@ def cotacoes_por_condicao_view(request):
         'cotacoes_agrupadas': cotacoes_agrupadas,
     }
 
+@require_POST
+@staff_member_required
+def atualizar_ordem_coleta(request):
+    try:
+        data = json.loads(request.body)
+        coleta_ids_ordenados = data.get('ordem', [])
+        
+        with models.transaction.atomic():
+            for index, coleta_id in enumerate(coleta_ids_ordenados):
+                ItemColeta.objects.filter(id=coleta_id).update(ordem_visita=index)
+        
+        return JsonResponse({'status': 'success', 'message': 'Ordem das coletas atualizada.'})
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
     
 
     return render(request, 'portal/relatorio_cotacoes_condicao.html', context)

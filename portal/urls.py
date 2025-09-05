@@ -29,6 +29,8 @@ urlpatterns = [
 
     # Painel de Coletas (Ações da Logística)
     path('interno/coletas/', views.coleta_dashboard_view, name='coleta_dashboard'),
+    path('interno/coletas/atualizar-ordem/', views.atualizar_ordem_coleta, name='atualizar_ordem_coleta'),
+
     
     # CORREÇÃO: Garanta que esta linha aponta para a view correta.
     path('interno/coletas/conferencia/<int:coleta_id>/', views.coleta_conferencia_view, name='coleta_conferencia'),
@@ -52,4 +54,5 @@ urlpatterns = [
     # Análise de Cotações
     path('interno/cotacoes/analise/', views.analise_cotacao_view, name='analise_cotacao'),
     path('interno/cotacoes/relatorio-condicao/', views.cotacoes_por_condicao_view, name='relatorio_cotacoes_condicao'),
+    
 ]

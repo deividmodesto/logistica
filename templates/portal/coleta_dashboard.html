@@ -5,42 +5,68 @@
 <head>
     <meta charset="UTF-8">
     <title>Painel de Coletas - Portal Reunidas</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
     <style>
         :root {
             --cor-principal: #012E23; --cor-destaque: #05B540; --cor-alerta: #FFAA00; --cor-info: #007bff; --cor-aviso: #FF6600;
+            --cor-pendente: #6c757d;
+            --cor-agendada: #007bff;
+            --cor-realizada-ok: #05B540;
+            --cor-realizada-divergencia: #FF6600;
+            --cor-background: #f0f2f5;
         }
-        body { font-family: sans-serif; margin: 0; background-color: #f8f9fa; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; background-color: var(--cor-background); }
         header { background-color: var(--cor-principal); color: white; padding: 1em 2em; display: flex; justify-content: space-between; align-items: center; }
         .header-logo { height: 40px; }
         .header-user a { color: var(--cor-alerta); text-decoration: none; font-weight: bold; }
         main { padding: 2em; }
-        h2 { border-bottom: 2px solid #dee2e6; padding-bottom: 0.5em; margin-bottom: 1.5em; }
+        h2, h3 { color: #343a40; }
+        h3 { border-bottom: 2px solid #dee2e6; padding-bottom: 0.5em; margin-bottom: 1em; margin-top: 2em; }
         .page-header { display: flex; justify-content: space-between; align-items: center; }
         nav.menu-interno { margin-left: 30px; }
         nav.menu-interno a { color: white; text-decoration: none; margin-left: 20px; font-weight: bold; padding: 5px 0; border-bottom: 2px solid transparent; transition: all 0.2s ease-in-out; }
         nav.menu-interno a:hover { color: var(--cor-alerta); }
         nav.menu-interno a.active { color: var(--cor-alerta); border-bottom-color: var(--cor-alerta); }
-        .filtros-container { background-color: #fff; padding: 1.5em; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.05); margin-bottom: 2em; display: flex; flex-wrap: wrap; gap: 1.5em; align-items: flex-end; }
+        .filtros-container { background-color: #fff; padding: 1.5em; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 2em; display: flex; flex-wrap: wrap; gap: 1.5em; align-items: flex-end; }
         .filtro-item { display: flex; flex-direction: column; }
-        .filtro-item label { margin-bottom: 0.5em; font-weight: bold; color: #555; }
+        .filtro-item label { margin-bottom: 0.5em; font-weight: bold; color: #555; font-size: 0.9em; }
         .filtro-item input, .filtro-item select { padding: 0.6em; border-radius: 4px; border: 1px solid #ccc; min-width: 200px; }
-        .btn { padding: 0.6em 1.2em; border-radius: 4px; border: none; cursor: pointer; font-size: 1em; text-decoration: none; display: inline-block; }
-        .btn-filtrar { background-color: #007bff; color: white; }
+        .btn { padding: 0.6em 1.2em; border-radius: 4px; border: none; cursor: pointer; font-size: 1em; text-decoration: none; display: inline-block; transition: background-color 0.2s; }
         .btn-limpar { background-color: #6c757d; color: white; }
-        .coleta-card { background-color: #fff; border: 1px solid #dee2e6; border-left: 5px solid var(--cor-info); border-radius: 8px; margin-bottom: 1.5em; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-        .coleta-header { padding: 1em 1.5em; background-color: #f8f9fa; border-bottom: 1px solid #dee2e6; display: flex; justify-content: space-between; align-items: center; }
-        .coleta-header h3 { margin: 0; }
-        .coleta-body { padding: 1.5em; display: grid; grid-template-columns: 1.5fr 1fr; gap: 2em; }
-        .coleta-info p { margin: 0.5em 0; }
-        .coleta-actions { display: flex; flex-direction: column; gap: 1.5em; }
-        .action-group { background-color: #f8f9fa; padding: 1em; border-radius: 5px; border: 1px solid #e9ecef; }
-        .action-group h5 { margin-top: 0; }
-        .action-group input, .action-group select, .action-group textarea { width: 95%; padding: 5px; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 10px; }
-        .action-group button { font-size: 0.9em; padding: 5px 10px; cursor: pointer; border: none; border-radius: 4px; color: white; }
-        .btn-agendar { background-color: #007bff; }
-        .btn-salvar-planejamento { background-color: var(--cor-destaque); }
-        .btn-conferir { background-color: var(--cor-principal); text-align: center; color: white !important; }
-        .prioridade-URGENTE { border-left-color: var(--cor-aviso); }
+        .btn-limpar:hover { background-color: #5a6268; }
+
+        .kanban-board { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.5em; }
+        .kanban-column { min-width: 320px; background-color: #e9ecef; border-radius: 8px; display: flex; flex-direction: column; }
+        .kanban-column-header { padding: 1em; font-weight: bold; border-top: 4px solid; display: flex; align-items: center; gap: 0.7em; background-color: #dee2e6; border-top-left-radius: 8px; border-top-right-radius: 8px;}
+        .kanban-column-content { padding: 0.7em; overflow-y: auto; flex-grow: 1; min-height: 400px; }
+        
+        .status-PENDENTE .kanban-column-header { border-color: var(--cor-pendente); }
+        .status-AGENDADA .kanban-column-header { border-color: var(--cor-agendada); }
+        .status-REALIZADA_OK .kanban-column-header { border-color: var(--cor-realizada-ok); }
+        .status-REALIZADA_DIVERGENCIA .kanban-column-header { border-color: var(--cor-realizada-divergencia); }
+
+        .coleta-card { background-color: #fff; border-radius: 6px; margin-bottom: 1em; box-shadow: 0 2px 4px rgba(0,0,0,0.08); cursor: grab; border-left: 5px solid; }
+        .coleta-card:active { cursor: grabbing; box-shadow: 0 4px 8px rgba(0,0,0,0.15); }
+        .prioridade-URGENTE { border-left-color: var(--cor-aviso) !important; }
+        .prioridade-NORMAL { border-left-color: var(--cor-info); }
+        .coleta-avulsa { border-left-color: var(--cor-alerta); }
+        
+        .coleta-header { padding: 0.8em 1em; border-bottom: 1px solid #f0f0f0; }
+        .coleta-header h5 { margin: 0; font-size: 1.1em; color: var(--cor-principal); }
+        .coleta-header span { font-size: 0.8em; color: #6c757d; }
+        .coleta-body { padding: 1em; font-size: 0.9em; display: flex; flex-direction: column; gap: 0.8em; }
+        .info-line { display: flex; align-items: center; gap: 0.5em; }
+        .info-line .fa-solid { color: #6c757d; width: 15px; text-align: center; }
+        .coleta-actions { padding: 1em; background-color: #f8f9fa; border-top: 1px solid #f0f0f0; }
+        .action-group { margin-bottom: 1em; }
+        .action-group:last-child { margin-bottom: 0; }
+        .action-group label { font-weight: bold; font-size: 0.85em; margin-bottom: 0.3em; display: block; }
+        .action-group input, .action-group select, .action-group textarea { width: 100%; padding: 5px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        .action-group textarea { resize: vertical; min-height: 40px; }
+        .btn-salvar-planejamento { background-color: var(--cor-destaque); color: white; width: 100%; margin-top: 0.5em; }
+        .btn-agendar { background-color: var(--cor-info); color: white; }
+        .btn-conferir { background-color: var(--cor-principal); color: white; width: 100%; text-align: center; margin-top: 0.5em; }
     </style>
 </head>
 <body>
@@ -57,7 +83,7 @@
             </nav>
         </div>
         <div class="header-user">
-            <span>Olá, {{ request.user.username }}</span> | <a href="{% url 'portal:logout' %}">Sair</a>
+            <span>Olá, {{ request.user.username }}</span> | <a href="{% url 'admin:logout' %}">Sair</a>
         </div>
     </header>
 
@@ -72,7 +98,7 @@
 
         <div class="page-header">
             <h2>Painel de Planejamento de Coletas</h2>
-            <a href="{% url 'portal:adicionar_coleta_avulsa' %}" class="btn btn-filtrar" style="background-color: #17a2b8;">+ Adicionar Coleta Avulsa</a>
+            <a href="{% url 'portal:adicionar_coleta_avulsa' %}" class="btn" style="background-color: #17a2b8; color: white;">+ Adicionar Coleta Avulsa</a>
         </div>
 
         <form method="get" class="filtros-container">
@@ -110,127 +136,129 @@
             <a href="{% url 'portal:coleta_dashboard' %}" class="btn btn-limpar">Limpar Filtros</a>
         </form>
 
-        {% for pedido in pedidos_para_coletar %}
-            {% for coleta in pedido.coletas.all %}
-                <div class="coleta-card prioridade-{{ coleta.prioridade }}">
-                    <div class="coleta-header">
-                        <h3>{{ pedido.fornecedor_usuario.nome_fornecedor }}</h3>
-                        <span>Pedido Nº: <strong><a href="{% url 'portal:comprador_pedido_detalhes' pedido.numero_pedido_display pedido.filial %}" style="color: inherit;">{{ pedido.numero_pedido_display }}</a></strong></span>
+        {% for data, coletas_do_dia in coletas_por_data.items %}
+            <h3>Coletas para {% if data == "Sem Data" %}Sem Data Definida{% else %}{{ data|date:"d/m/Y" }}{% endif %}</h3>
+            <div class="kanban-board" data-data-coleta="{{ data|date:"Y-d-m" }}">
+                {% for status_key, status_value in status_choices %}
+                <div class="kanban-column status-{{ status_key }}">
+                    <div class="kanban-column-header">
+                        {% if status_key == 'PENDENTE' %}<i class="fa-solid fa-hourglass-half"></i>
+                        {% elif status_key == 'AGENDADA' %}<i class="fa-solid fa-calendar-check"></i>
+                        {% elif status_key == 'REALIZADA_OK' %}<i class="fa-solid fa-check-double"></i>
+                        {% elif status_key == 'REALIZADA_DIVERGENCIA' %}<i class="fa-solid fa-triangle-exclamation"></i>
+                        {% endif %}
+                        {{ status_value }}
                     </div>
-                    <div class="coleta-body">
-                        <div class="coleta-info">
-                            <h4>Detalhes da Coleta</h4>
-                            <p><strong>Endereço:</strong> {{ pedido.fornecedor_erp_info.a2_end }}, {{ pedido.fornecedor_erp_info.a2_mun }}</p>
-                            <p><strong>Disponível desde:</strong> {{ coleta.data_disponibilidade|date:"d/m/Y" }}</p>
-                            <p><strong>Agendado para:</strong> {{ coleta.data_agendada|date:"d/m/Y"|default:"<span style='color:red;'>AGUARDANDO AGENDAMENTO</span>"|safe }}</p>
-                            <p><strong>Necessidade:</strong> {{ coleta.data_necessidade|default:"N/A" }}</p>
-                            <p><strong>Volumes:</strong> {{ coleta.volumes|default_if_none:"N/A" }} | <strong>Peso:</strong> {{ coleta.peso_kg|localize|default_if_none:"N/A" }} Kg</p>
-                            <p><strong>Status:</strong> {{ coleta.get_status_coleta_display }} {% if coleta.conferido_por %}(por {{ coleta.conferido_por.username }}){% endif %}</p>
-                            <p><strong>Motorista:</strong> {{ coleta.motorista.nome|default:"<span style='color:red;'>NÃO DEFINIDO</span>"|safe }}</p>
-
-
-                            {% if coleta.detalhes.all %}
-                                <div style="margin-top: 1em;">
-                                    <strong>Itens Disponibilizados:</strong>
-                                    <ul style="font-size: 0.9em; padding-left: 20px; margin-top: 5px;">
-                                        {% for detalhe in coleta.detalhes.all %}
-                                            <li>{{ detalhe.quantidade_disponivel|localize }}x {{ detalhe.item_erp.c7_produto }} - {{ detalhe.item_erp.c7_descri }}</li>
-                                        {% endfor %}
-                                    </ul>
+                    <div class="kanban-column-content" id="coluna-{{ data|date:"Y-d-m" }}-{{ status_key }}" data-status="{{ status_key }}">
+                        {% for coleta in coletas_do_dia %}
+                            {% if coleta.status_coleta == status_key %}
+                            <div class="coleta-card {% if coleta.pedido_liberado %}prioridade-{{ coleta.prioridade }}{% else %}coleta-avulsa{% endif %}" data-coleta-id="{{ coleta.id }}">
+                                <div class="coleta-header">
+                                    <h5>{{ coleta.display_nome_fornecedor }}</h5>
+                                    <span>Pedido: <strong>{% if coleta.pedido_liberado %}{{ coleta.pedido_liberado.numero_pedido }}{% else %}AVULSO{% endif %}</strong></span>
                                 </div>
+                                <div class="coleta-body">
+                                    <div class="info-line"><i class="fa-solid fa-map-marker-alt"></i> <strong>Município:</strong> {{ coleta.display_municipio|default:"N/A" }}</div>
+                                    <div class="info-line"><i class="fa-solid fa-calendar-day"></i> <strong>Disponível:</strong> {{ coleta.data_disponibilidade|date:"d/m/Y" }}</div>
+                                    <div class="info-line"><i class="fa-solid fa-calendar-check"></i> <strong>Agendado:</strong> {{ coleta.data_agendada|date:"d/m/Y"|default:"-" }}</div>
+                                    <div class="info-line"><i class="fa-solid fa-box-open"></i> <strong>Volumes:</strong> {{ coleta.volumes|default_if_none:"-" }} | <strong>Peso:</strong> {{ coleta.peso_kg|localize|default_if_none:"-" }} Kg</div>
+                                    {% if coleta.detalhes.all %}
+                                        <div style="margin-top: 0.5em;">
+                                            <strong>Itens:</strong>
+                                            <ul style="font-size: 0.9em; padding-left: 20px; margin: 5px 0 0 0;">
+                                            {% for detalhe in coleta.detalhes.all %}
+                                                {% if detalhe.item_erp %}
+                                                    <li>{{ detalhe.quantidade_disponivel|localize }}x {{ detalhe.item_erp.c7_descri }}</li>
+                                                {% endif %}
+                                            {% endfor %}
+                                            </ul>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                                <div class="coleta-actions">
+                                    <form method="post" style="width: 100%;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="coleta_id" value="{{ coleta.id }}">
+                                        
+                                        <div class="action-group">
+                                            <label>Agendamento</label>
+                                            <div style="display: flex; gap: 5px;">
+                                                <input type="date" name="data_agendada" value="{{ coleta.data_agendada|date:'Y-d-m' }}">
+                                                <button type="submit" name="agendar_coleta" class="btn btn-agendar">Salvar</button>
+                                            </div>
+                                        </div>
+
+                                        <div class="action-group">
+                                            <label>Planejamento de Rota</label>
+                                            <div style="display: flex; gap: 5px; margin-bottom: 5px;">
+                                                <input type="number" name="ordem_visita" value="{{ coleta.ordem_visita|default:0 }}" min="0" title="Ordem de Visita" style="width: 60px;">
+                                                <select name="motorista" style="flex-grow: 1;">
+                                                    <option value="">-- Motorista --</option>
+                                                    {% for motorista in motoristas %}
+                                                        <option value="{{ motorista.id }}" {% if coleta.motorista.id == motorista.id %}selected{% endif %}>{{ motorista.nome }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                            </div>
+                                            <textarea name="observacao_coleta" rows="2" placeholder="Observação interna...">{{ coleta.observacao_coleta|default_if_none:"" }}</textarea>
+                                            <button type="submit" name="salvar_planejamento" class="btn btn-salvar-planejamento">Salvar</button>
+                                        </div>
+                                        
+                                        <a href="{% if coleta.pedido_liberado %}{% url 'portal:coleta_conferencia' coleta.id %}{% else %}{% url 'portal:coleta_avulsa_conferencia' coleta.id %}{% endif %}" class="btn btn-conferir">Conferir Coleta</a>
+                                    </form>
+                                </div>
+                            </div>
                             {% endif %}
-                        </div>
-                        <div class="coleta-actions">
-                            <form method="post">
-                                {% csrf_token %}
-                                <input type="hidden" name="coleta_id" value="{{ coleta.id }}">
-                                <div class="action-group">
-                                    <h5>Planejamento da Rota</h5>
-                                    <label>Ordem de Visita</label>
-                                    <input type="number" name="ordem_visita" value="{{ coleta.ordem_visita|default:0 }}" min="0">
-                                    <label>Prioridade</label>
-                                    <select name="prioridade">
-                                        {% for key, value in prioridade_choices %}
-                                            <option value="{{ key }}" {% if key == coleta.prioridade %}selected{% endif %}>{{ value }}</option>
-                                        {% endfor %}
-                                    </select>
-                                    <label>Motorista</label>
-                                    <select name="motorista">
-                                        <option value="">-- Nenhum --</option>
-                                        {% for motorista in motoristas %}
-                                            <option value="{{ motorista.id }}" {% if coleta.motorista.id == motorista.id %}selected{% endif %}>
-                                                {{ motorista.nome }}
-                                            </option>
-                                        {% endfor %}
-                                    </select>
-                                    <label>Observação da Coleta</label>
-                                    <textarea name="observacao_coleta" rows="2">{{ coleta.observacao_coleta|default_if_none:"" }}</textarea>
-                                    <button type="submit" name="salvar_planejamento" class="btn-salvar-planejamento">Salvar Rota</button>
-                                </div>
-                                <div class="action-group">
-                                    <h5>Agendamento</h5>
-                                    <input type="date" name="data_agendada" value="{{ coleta.data_agendada|date:'Y-m-d' }}">
-                                    <button type="submit" name="agendar_coleta" class="btn-agendar">Salvar Data</button>
-                                </div>
-                                <a href="{% url 'portal:coleta_conferencia' coleta.id %}" class="btn btn-conferir">Conferir Coleta</a>
-                            </form>
-                        </div>
+                        {% endfor %}
                     </div>
                 </div>
-            {% endfor %}
+                {% endfor %}
+            </div>
+        {% empty %}
+            <p style="text-align: center; background-color: #fff; padding: 2em; border-radius: 8px;">Nenhuma coleta encontrada para os filtros selecionados.</p>
         {% endfor %}
 
-        <h2 style="margin-top: 2em;">Coletas Avulsas / Extras</h2>
-        {% for coleta in coletas_avulsas %}
-        <div class="coleta-card prioridade-{{ coleta.prioridade }}" style="border-left-color: var(--cor-alerta);">
-            <div class="coleta-header">
-                <h3>{{ coleta.fornecedor_avulso }}</h3>
-                <span>COLETA AVULSA</span>
-            </div>
-            <div class="coleta-body">
-                 <div class="coleta-info">
-                    <h4>Detalhes da Coleta</h4>
-                    <p><strong>Motivo/Descrição:</strong> {{ coleta.descricao_avulsa|linebreaksbr|default:"N/A" }}</p>
-                    <p><strong>Agendado para:</strong> {{ coleta.data_agendada|date:"d/m/Y" }}</p>
-                    <p><strong>Volumes:</strong> {{ coleta.volumes|default_if_none:"N/A" }} | <strong>Peso:</strong> {{ coleta.peso_kg|localize|default_if_none:"N/A" }} Kg</p>
-                    <p><strong>Status:</strong> {{ coleta.get_status_coleta_display }} {% if coleta.conferido_por %}(por {{ coleta.conferido_por.username }}){% endif %}</p>
-                    <p><strong>Motorista:</strong> {{ coleta.motorista.nome|default:"<span style='color:red;'>NÃO DEFINIDO</span>"|safe }}</p>
-                </div>
-                <div class="coleta-actions">
-                    <form method="post">
-                        {% csrf_token %}
-                        <input type="hidden" name="coleta_id" value="{{ coleta.id }}">
-                        <div class="action-group">
-                            <h5>Planejamento da Rota</h5>
-                            <label>Ordem de Visita</label>
-                            <input type="number" name="ordem_visita" value="{{ coleta.ordem_visita|default:0 }}" min="0">
-                            <label>Prioridade</label>
-                            <select name="prioridade">
-                                {% for key, value in prioridade_choices %}
-                                    <option value="{{ key }}" {% if key == coleta.prioridade %}selected{% endif %}>{{ value }}</option>
-                                {% endfor %}
-                            </select>
-                            
-                            <label>Motorista</label>
-                            <select name="motorista">
-                                <option value="">-- Nenhum --</option>
-                                {% for motorista in motoristas %}
-                                    <option value="{{ motorista.id }}" {% if coleta.motorista.id == motorista.id %}selected{% endif %}>
-                                        {{ motorista.nome }}
-                                    </option>
-                                {% endfor %}
-                            </select>
-                            <label>Observação da Coleta</label>
-                            <textarea name="observacao_coleta" rows="2">{{ coleta.observacao_coleta|default_if_none:"" }}</textarea>
-                            
-                            <button type="submit" name="salvar_planejamento" class="btn-salvar-planejamento">Salvar Rota</button>
-                        </div>
-                        <a href="{% url 'portal:coleta_avulsa_conferencia' coleta.id %}" class="btn btn-conferir">Conferir Coleta</a>
-                    </form>
-                </div>
-            </div>
-        </div>
-        {% endfor %}
     </main>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const boards = document.querySelectorAll('.kanban-board');
+            
+            boards.forEach(board => {
+                const columns = board.querySelectorAll('.kanban-column-content');
+                columns.forEach(column => {
+                    new Sortable(column, {
+                        group: `coletas-${board.dataset.dataColeta}`,
+                        animation: 150,
+                        handle: '.coleta-header',
+                        onEnd: function (evt) {
+                            const toColumn = evt.to;
+                            const coletaIdsOrdenados = Array.from(toColumn.children).map(child => child.dataset.coletaId);
+                            const url = "{% url 'portal:atualizar_ordem_coleta' %}";
+                            const csrfToken = '{{ csrf_token }}';
+
+                            fetch(url, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': csrfToken
+                                },
+                                body: JSON.stringify({ ordem: coletaIdsOrdenados })
+                            })
+                            .then(response => response.json())
+                            .then(data => {
+                                if(data.status !== 'success') {
+                                    console.error('Erro ao salvar a ordem:', data.message);
+                                } else {
+                                    console.log('Ordem salva com sucesso!');
+                                }
+                            })
+                            .catch(error => console.error('Erro na requisição:', error));
+                        }
+                    });
+                });
+            });
+        });
+    </script>
 </body>
 </html>

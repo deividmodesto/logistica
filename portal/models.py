@@ -138,12 +138,7 @@ class ItemColetaDetalhe(models.Model):
     )
     observacao_divergencia = models.TextField(blank=True, null=True)
 
-    @property
-    def item_erp(self):
-        try:
-            return SC7PedidoItem.objects.get(recno=self.item_erp_recno)
-        except SC7PedidoItem.DoesNotExist:
-            return None
+    # REMOVEMOS A PROPERTY DAQUI. A VIEW AGORA CUIDARÁ DE ASSOCIAR O OBJETO.
 
     class Meta:
         db_table = 'ItemColetaDetalhe'

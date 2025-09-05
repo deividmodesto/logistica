@@ -11,7 +11,6 @@ from .models import Motorista
 from .models import FornecedorUsuario, PedidoLiberado, SA2Fornecedor, SC7PedidoItem, ItemColeta, ItemColetaDetalhe, FornecedorAvulso, FornecedorEmailAdicional
 
 
-# Crie uma classe para o formulário inline (parte 1 da correção)
 class FornecedorEmailAdicionalInline(admin.TabularInline):
     model = FornecedorEmailAdicional
     extra = 1
@@ -27,9 +26,11 @@ class FornecedorUsuarioAdmin(admin.ModelAdmin):
 class ItemColetaDetalheInline(admin.TabularInline):
     model = ItemColetaDetalhe
     extra = 0
-    # CORREÇÃO AQUI: Remova 'quantidade_disponivel' dos campos somente leitura
-    readonly_fields = ('item_erp', 'quantidade_coletada', 'observacao_divergencia')
+    # AQUI ESTÁ A CORREÇÃO IMPORTANTE:
+    # Usar 'item_erp_recno' diretamente, pois 'item_erp' é uma property e não um campo de BD.
+    readonly_fields = ('item_erp_recno', 'quantidade_disponivel', 'quantidade_coletada', 'observacao_divergencia')
     can_delete = False
+    
     def has_add_permission(self, request, obj=None):
         return False
 
@@ -44,7 +45,6 @@ class ItemColetaAdmin(admin.ModelAdmin):
 
     @admin.display(description='Pedido / Coleta Avulsa')
     def get_identificador_pedido(self, obj):
-        # --- ESTA É A VERIFICAÇÃO QUE CORRIGE O ERRO ---
         if obj.pedido_liberado:
             return f"Pedido: {obj.pedido_liberado.numero_pedido}"
         else:
