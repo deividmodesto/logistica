@@ -38,6 +38,8 @@ from .models import (FornecedorUsuario, PedidoLiberado, SA2Fornecedor, SC7Pedido
                      SYSCompany, SC1, SE4, FornecedorEmailAdicional, SD1NFItem, SBM)
 from .models import Motorista
 from collections import defaultdict
+from itertools import groupby
+from operator import attrgetter
 
 
 class FornecedorEmailAdicionalForm(forms.ModelForm):
@@ -263,7 +265,7 @@ def comprador_dashboard_view(request):
     filtro_classe_superior = request.GET.get('classe_superior', '')
 
     status_choices = { 'L': 'Liberado', 'B': 'Bloqueado', 'R': 'Reprovado' }
-    
+
     pedidos_ja_liberados = list(PedidoLiberado.objects.values_list('numero_pedido', flat=True))
 
     base_pedidos_pendentes_qs = SC7PedidoItem.objects.annotate(
@@ -273,7 +275,7 @@ def comprador_dashboard_view(request):
     ).exclude(
         composite_key__in=pedidos_ja_liberados
     )
-    
+
     # Lógica para obter filtros (sem alteração)
     todos_grupos = SBM.objects.all().order_by('bm_grupo')
     classes_superiores = []
@@ -287,7 +289,7 @@ def comprador_dashboard_view(request):
                     'desc': f"{codigo_classe} - {grupo.bm_desc.strip()}"
                 })
                 codigos_classes_adicionadas.add(codigo_classe)
-    
+
     grupos_de_produto = todos_grupos.exclude(bm_grupo__in=[c['cod'] for c in classes_superiores])
 
     filiais_para_filtro = base_pedidos_pendentes_qs.values_list('c7_filial', flat=True).distinct().order_by('c7_filial')
@@ -314,7 +316,7 @@ def comprador_dashboard_view(request):
         pedidos_filtrados_qs = pedidos_filtrados_qs.filter(c7_filial=filtro_filial)
     if filtro_status:
         pedidos_filtrados_qs = pedidos_filtrados_qs.filter(c7_conapro=filtro_status)
-    
+
     if filtro_classe_superior:
         pedidos_filtrados_qs = pedidos_filtrados_qs.filter(c7_produto__startswith=filtro_classe_superior)
     elif filtro_grupo_produto:
@@ -341,24 +343,26 @@ def comprador_dashboard_view(request):
         )
     ).order_by('-c7_emissao')
 
-    # --- NOVA LÓGICA DE PAGINAÇÃO ---
+    # --- LÓGICA DE PAGINAÇÃO CORRIGIDA ---
     per_page = request.GET.get('per_page', 25)
     try:
         per_page = int(per_page)
     except (ValueError, TypeError):
         per_page = 25
-
-    paginator = Paginator(resultado_final, per_page)
+    
+    # =====> ALTERAÇÃO ESTÁ AQUI <=====
+    # Convertendo para lista para garantir que a paginação funcione com a query complexa
+    paginator = Paginator(list(resultado_final), per_page)
+    
     page_number = request.GET.get('page')
     pedidos_page_obj = paginator.get_page(page_number)
 
-    # --- LÓGICA DE ANÁLISE DE ACESSO E MÚLTIPLAS FILIAIS (AGORA SOBRE A PÁGINA ATUAL) ---
     cnpjs_com_acesso = {user.cnpj.strip(): user for user in FornecedorUsuario.objects.all()}
-    
+
     for pedido in pedidos_page_obj:
         codigo_fornecedor = pedido.c7_fornece.strip()
         possible_suppliers = SA2Fornecedor.objects.filter(a2_cod=codigo_fornecedor)
-        
+
         pedido.fornecedor_tem_acesso = False
         pedido.fornecedor_usuario = None
 
@@ -389,7 +393,7 @@ def comprador_dashboard_view(request):
     codigos_fornecedores_filtrados = set(resultado_final.values_list('c7_fornece', flat=True))
     fornecedores_com_acesso_set = set()
     fornecedores_sem_acesso_set = set()
-    
+
     for fornecedor_cod in codigos_fornecedores_filtrados:
         suppliers = SA2Fornecedor.objects.filter(a2_cod=fornecedor_cod.strip())
         if any(sup.a2_cgc.strip() in cnpjs_com_acesso for sup in suppliers):
@@ -760,11 +764,11 @@ def comprador_pedido_detalhes_view(request, pedido_num, filial):
 
 @staff_member_required
 def comprador_historico_view(request):
-    # ... (lógica de filtros permanece a mesma) ...
+    # Lógica de filtros atualizada
     filtro_fornecedor_id = request.GET.get('fornecedor', '')
     filtro_pedido_num = request.GET.get('pedido', '')
-    filtro_data_emissao = request.GET.get('data_emissao', '')
     filtro_data_liberacao = request.GET.get('data_liberacao', '')
+    filtro_status = request.GET.get('status', '') # Novo filtro de status
 
     historico_qs = PedidoLiberado.objects.select_related(
         'fornecedor_usuario'
@@ -776,40 +780,52 @@ def comprador_historico_view(request):
         historico_qs = historico_qs.filter(fornecedor_usuario__id=filtro_fornecedor_id)
     if filtro_pedido_num:
         historico_qs = historico_qs.filter(numero_pedido__icontains=filtro_pedido_num)
-    if filtro_data_emissao:
-        historico_qs = historico_qs.filter(data_emissao=filtro_data_emissao)
     if filtro_data_liberacao:
         historico_qs = historico_qs.filter(data_liberacao_portal__date=filtro_data_liberacao)
-
-    stats_historico = {
-        'total_liberados': historico_qs.count(),
-        'aguardando_fornecedor': historico_qs.filter(status='LIBERADO').count(),
-        'prontos_para_coleta': historico_qs.filter(status__in=['PARCIALMENTE_DISPONIVEL', 'TOTALMENTE_DISPONIVEL']).count(),
-        'concluidos': historico_qs.filter(status='COLETADO').count(),
-    }
+    if filtro_status: # Aplicando o filtro de status
+        historico_qs = historico_qs.filter(status=filtro_status)
 
     historico_qs = historico_qs.order_by('-data_liberacao_portal')
+
+    # Lógica de paginação
+    per_page = request.GET.get('per_page', 25)
+    try:
+        per_page = int(per_page)
+    except (ValueError, TypeError):
+        per_page = 25
     
-    # CORREÇÃO: Separa o número do pedido e a filial para usar no link
-    for pedido in historico_qs:
+    paginator = Paginator(historico_qs, per_page)
+    page_number = request.GET.get('page')
+    pedidos_historico_page_obj = paginator.get_page(page_number)
+    
+    for pedido in pedidos_historico_page_obj:
         try:
             pedido.num_original, pedido.filial = pedido.numero_pedido.split('-')
         except ValueError:
             pedido.num_original = pedido.numero_pedido
-            pedido.filial = '01' 
+            pedido.filial = '01'
+            
+    stats_historico = {
+        'total_pedidos': paginator.count,
+        'aguardando_fornecedor': historico_qs.filter(status='LIBERADO').count(),
+        'prontos_para_coleta': historico_qs.filter(status__in=['PARCIALMENTE_DISPONIVEL', 'TOTALMENTE_DISPONIVEL']).count(),
+        'concluidos': historico_qs.filter(status='COLETADO').count(),
+    }
 
     fornecedores_com_pedidos = FornecedorUsuario.objects.filter(
         pedidoliberado__isnull=False
     ).distinct().order_by('nome_fornecedor')
 
     context = {
-        'pedidos_historico': historico_qs,
+        'pedidos_historico_page_obj': pedidos_historico_page_obj,
+        'per_page': per_page,
         'fornecedores': fornecedores_com_pedidos,
+        'status_choices': PedidoLiberado.STATUS_CHOICES, # Enviando as opções de status para o template
         'filtros': {
             'fornecedor': filtro_fornecedor_id,
             'pedido': filtro_pedido_num,
-            'data_emissao': filtro_data_emissao,
             'data_liberacao': filtro_data_liberacao,
+            'status': filtro_status, # Enviando o valor do filtro atual
         },
         'stats_historico': stats_historico,
     }
@@ -818,7 +834,6 @@ def comprador_historico_view(request):
 
 @staff_member_required
 def coleta_dashboard_view(request):
-    # ... (lógica do POST permanece a mesma) ...
     if request.method == 'POST':
         coleta_id = request.POST.get('coleta_id')
         if not coleta_id:
@@ -863,7 +878,7 @@ def coleta_dashboard_view(request):
         query_string = request.GET.urlencode()
         return redirect(f"{reverse('portal:coleta_dashboard')}?{query_string}")
 
-    # ... (lógica de filtros permanece a mesma) ...
+    # --- LÓGICA DE FILTROS E BUSCA (GET) ---
     filtro_fornecedor_id = request.GET.get('fornecedor', '')
     filtro_pedido_num = request.GET.get('pedido', '')
     filtro_data_disp = request.GET.get('data_disponibilidade', '')
@@ -915,8 +930,7 @@ def coleta_dashboard_view(request):
     itens_erp_map = {
         item.recno: item for item in SC7PedidoItem.objects.filter(recno__in=list(todos_recnos))
     }
-
-    # CORREÇÃO: Itera sobre os pedidos para separar num e filial e adiciona ao objeto
+    
     for pedido in pedidos_para_coletar:
         codigo = pedido.fornecedor_usuario.codigo_externo.strip() if pedido.fornecedor_usuario.codigo_externo else ''
         pedido.fornecedor_erp_info = mapa_fornecedores_erp.get(codigo)
@@ -936,7 +950,6 @@ def coleta_dashboard_view(request):
             for detalhe in coleta.detalhes.all():
                 detalhe.item_erp_info = itens_erp_map.get(detalhe.item_erp_recno)
     
-    # ... (resto da lógica para buscar dados da SC) ...
     numeros_compostos_validos = [p.numero_pedido for p in pedidos_para_coletar if p.numero_pedido and '-' in p.numero_pedido]
     pedidos_info = [{'num': num.split('-')[0], 'filial': num.split('-')[1]} for num in numeros_compostos_validos]
     

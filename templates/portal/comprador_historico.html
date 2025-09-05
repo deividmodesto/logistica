@@ -88,6 +88,36 @@
         .alert { padding: 15px; margin-bottom: 20px; border: 1px solid transparent; border-radius: 4px; }
         .alert-success { color: #155724; background-color: #d4edda; border-color: #c3e6cb; }
         .alert-error, .alert-warning { color: #721c24; background-color: #f8d7da; border-color: #f5c6cb; }
+
+        /* Estilos para Paginação */
+        .pagination-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 2em;
+            padding: 1em;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.05);
+        }
+        .pagination-controls a, .pagination-controls strong, .pagination-controls span {
+            padding: 8px 12px;
+            margin: 0 2px;
+            border-radius: 4px;
+            text-decoration: none;
+            color: var(--cor-principal);
+        }
+        .pagination-controls a {
+            border: 1px solid #dee2e6;
+        }
+        .pagination-controls a:hover {
+            background-color: #e9ecef;
+        }
+        .pagination-controls strong {
+            background-color: var(--cor-principal);
+            color: white;
+            border: 1px solid var(--cor-principal);
+        }
     </style>
 </head>
 <body>
@@ -124,7 +154,31 @@
 
         <div class="stats-container">
             </div>
+            
         <form method="get" class="filtros-container">
+            <div class="filtro-item">
+                <label for="fornecedor">Fornecedor</label>
+                <select name="fornecedor" id="fornecedor" onchange="this.form.submit()">
+                    <option value="">-- Todos --</option>
+                    {% for f in fornecedores %}
+                        <option value="{{ f.id }}" {% if f.id|stringformat:"s" == filtros.fornecedor %}selected{% endif %}>{{ f.nome_fornecedor }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="filtro-item">
+                <label for="data_liberacao">Data Liberação</label>
+                <input type="date" name="data_liberacao" id="data_liberacao" value="{{ filtros.data_liberacao }}" onchange="this.form.submit()">
+            </div>
+            <div class="filtro-item">
+                <label for="status">Status no Portal</label>
+                <select name="status" id="status" onchange="this.form.submit()">
+                    <option value="">-- Todos --</option>
+                    {% for key, value in status_choices %}
+                        <option value="{{ key }}" {% if key == filtros.status %}selected{% endif %}>{{ value }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <a href="{% url 'portal:comprador_historico' %}" class="btn btn-limpar">Limpar Filtros</a>
         </form>
 
         <table>
@@ -140,7 +194,7 @@
         </tr>
     </thead>
             <tbody>
-        {% for pedido in pedidos_historico %}
+        {% for pedido in pedidos_historico_page_obj %}
         <tr>
         <td><a href="{% url 'portal:comprador_pedido_detalhes' pedido.num_original pedido.filial %}">{{ pedido.numero_pedido }}</a></td>
         <td>{{ pedido.fornecedor_usuario.nome_fornecedor }}</td>
@@ -167,6 +221,51 @@
         {% endfor %}
     </tbody>
         </table>
+
+        <div class="pagination-controls">
+            <div class="pagination-info">
+                Página {{ pedidos_historico_page_obj.number }} de {{ pedidos_historico_page_obj.paginator.num_pages }}.
+                <span style="color: #6c757d; font-size: 0.9em;">({{ stats_historico.total_pedidos }} pedidos no total)</span>
+            </div>
+
+            <div class="pagination-links">
+                {% if pedidos_historico_page_obj.has_previous %}
+                    <a href="?page=1&{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}">&laquo; Primeira</a>
+                    <a href="?page={{ pedidos_historico_page_obj.previous_page_number }}&{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}">Anterior</a>
+                {% endif %}
+
+                {% for i in pedidos_historico_page_obj.paginator.page_range %}
+                    {% if pedidos_historico_page_obj.number == i %}
+                        <strong>{{ i }}</strong>
+                    {% elif i > pedidos_historico_page_obj.number|add:'-3' and i < pedidos_historico_page_obj.number|add:'3' %}
+                        <a href="?page={{ i }}&{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}">{{ i }}</a>
+                    {% elif forloop.counter == 1 or forloop.revcounter == 1 %}
+                         <span>...</span>
+                    {% endif %}
+                {% endfor %}
+
+                {% if pedidos_historico_page_obj.has_next %}
+                    <a href="?page={{ pedidos_historico_page_obj.next_page_number }}&{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}">Próxima</a>
+                    <a href="?page={{ pedidos_historico_page_obj.paginator.num_pages }}&{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}">Última &raquo;</a>
+                {% endif %}
+            </div>
+
+            <div class="pagination-per-page">
+                <form method="get" style="display: inline-flex; align-items: center; gap: 5px;">
+                    <span>Exibir:</span>
+                    {% for key, value in request.GET.items %}
+                        {% if key != 'per_page' and key != 'page' %}
+                            <input type="hidden" name="{{ key }}" value="{{ value }}">
+                        {% endif %}
+                    {% endfor %}
+                    <select name="per_page" onchange="this.form.submit()" style="padding: 0.4em; border-radius: 4px; border: 1px solid #ccc;">
+                        <option value="25" {% if per_page == 25 %}selected{% endif %}>25</option>
+                        <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+                        <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+                    </select>
+                </form>
+            </div>
+        </div>
     </main>
 </body>
 </html>

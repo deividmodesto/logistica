@@ -65,7 +65,7 @@
         .stat-card.nao-definido .stat-number { color: #6c757d; }
         .btn-add-email { background-color: #28a745; color: white; padding: 8px 12px; border-radius: 5px; text-decoration: none; font-size: 0.9em; }
         .select-filial { width: 100%; padding: 8px; margin-bottom: 8px; border-radius: 4px; border: 1px solid #ccc; }
-        
+
         /* Estilos para Paginação */
         .pagination-controls {
             display: flex;
@@ -156,7 +156,7 @@
                 <div class="stat-number">{{ stats.fornecedores_com_acesso }}</div>
             </div>
         </div>
-        
+
         <form method="get" class="filtros-container">
             <div class="filtro-item">
                 <label for="filial">Filial</label>
@@ -239,7 +239,7 @@
             <button type="submit" class="btn btn-filtrar">Buscar Pedido</button>
             <a href="{% url 'portal:comprador_dashboard' %}" class="btn btn-limpar">Limpar Filtros</a>
         </form>
-    
+
         <table>
             <thead>
                 <tr>
@@ -316,21 +316,29 @@
                 Página {{ pedidos_page_obj.number }} de {{ pedidos_page_obj.paginator.num_pages }}.
                 <span style="color: #6c757d; font-size: 0.9em;">({{ stats.total_pedidos }} pedidos no total)</span>
             </div>
-        
+
             <div class="pagination-links">
-                {% if pedidos_page_obj.has_previous %}
-                    <a href="?page=1&{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}">&laquo; Primeira</a>
-                    <a href="?page={{ pedidos_page_obj.previous_page_number }}&{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}">Anterior</a>
+            {% if pedidos_page_obj.has_previous %}
+                <a href="?page=1&{{ request.GET.urlencode }}">&laquo; Primeira</a>
+                <a href="?page={{ pedidos_page_obj.previous_page_number }}&{{ request.GET.urlencode }}">Anterior</a>
+            {% endif %}
+
+            {% for i in pedidos_page_obj.paginator.page_range %}
+                {% if pedidos_page_obj.number == i %}
+                    <strong>{{ i }}</strong>
+                {% elif i > pedidos_page_obj.number|add:'-3' and i < pedidos_page_obj.number|add:'3' %}
+                    <a href="?page={{ i }}&{{ request.GET.urlencode }}">{{ i }}</a>
+                {% elif forloop.counter == 1 or forloop.revcounter == 1 %}
+                     <span>...</span>
                 {% endif %}
-        
-                <strong>{{ pedidos_page_obj.number }}</strong>
-        
-                {% if pedidos_page_obj.has_next %}
-                    <a href="?page={{ pedidos_page_obj.next_page_number }}&{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}">Próxima</a>
-                    <a href="?page={{ pedidos_page_obj.paginator.num_pages }}&{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}">Última &raquo;</a>
-                {% endif %}
-            </div>
-            
+            {% endfor %}
+
+            {% if pedidos_page_obj.has_next %}
+                <a href="?page={{ pedidos_page_obj.next_page_number }}&{{ request.GET.urlencode }}">Próxima</a>
+                <a href="?page={{ pedidos_page_obj.paginator.num_pages }}&{{ request.GET.urlencode }}">Última &raquo;</a>
+            {% endif %}
+        </div>
+
             <div class="pagination-per-page">
                 <form method="get" style="display: inline-flex; align-items: center; gap: 5px;">
                     <span>Exibir:</span>
