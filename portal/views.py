@@ -415,7 +415,8 @@ def preparar_contexto_pdf(pedido_num, filial):
 
     fornecedor_cod = pedido_erp.c7_fornece.strip()
     try:
-        fornecedor_erp = SA2Fornecedor.objects.get(a2_cod=fornecedor_cod)
+        fornecedor_erp = SA2Fornecedor.objects.filter(a2_cod=fornecedor_cod.strip()).first()
+
     except SA2Fornecedor.DoesNotExist:
         fornecedor_erp = None
     
@@ -559,7 +560,7 @@ def criar_acesso_fornecedor_view(request, fornecedor_cod):
             messages.warning(request, "Este fornecedor já possui um acesso.")
             return redirect('portal:comprador_dashboard')
         try:
-            fornecedor_erp = SA2Fornecedor.objects.get(a2_cod=fornecedor_cod)
+            fornecedor_erp = SA2Fornecedor.objects.filter(a2_cod=fornecedor_cod).first()
             senha_provisoria = get_random_string(10)
             FornecedorUsuario.objects.create(
                 cnpj=fornecedor_erp.a2_cgc.strip(),
